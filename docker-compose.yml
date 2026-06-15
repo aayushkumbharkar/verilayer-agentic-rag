@@ -1,0 +1,135 @@
+services:
+  # ─── PostgreSQL ─────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: verilayer-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-verilayer}
+      POSTGRES_USER: ${POSTGRES_USER:-verilayer}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-verilayer_secret}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-verilayer} -d ${POSTGRES_DB:-verilayer}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ─── OpenSearch ─────────────────────────────────────────────────────────────
+  opensearch:
+    image: opensearchproject/opensearch:2.11.0
+    container_name: verilayer-opensearch
+    environment:
+      - discovery.type=single-node
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+      - DISABLE_SECURITY_PLUGIN=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+      - bootstrap.memory_lock=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    ports:
+      - "9200:9200"
+      - "9600:9600"
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health | grep -qv '\"status\":\"red\"'"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+    restart: unless-stopped
+
+  # ─── Redis ──────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: verilayer-redis
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ─── FastAPI ────────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    container_name: verilayer-api
+    ports:
+      - "8000:8000"
+    environment:
+      # App
+      - APP_NAME=${APP_NAME:-VeriLayer}
+      - APP_VERSION=${APP_VERSION:-0.1.0}
+      - DEBUG=${DEBUG:-false}
+      # PostgreSQL
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-verilayer}
+      - POSTGRES_USER=${POSTGRES_USER:-verilayer}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-verilayer_secret}
+      # OpenSearch
+      - OPENSEARCH_HOST=opensearch
+      - OPENSEARCH_PORT=9200
+      - OPENSEARCH_INDEX=${OPENSEARCH_INDEX:-verilayer-docs}
+      # Redis
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_TTL=${REDIS_TTL:-3600}
+      # Groq
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GROQ_MODEL=${GROQ_MODEL:-llama-3.3-70b-versatile}
+      - GROQ_TIMEOUT=${GROQ_TIMEOUT:-30}
+      - GROQ_MAX_RETRIES=${GROQ_MAX_RETRIES:-3}
+      # Jina
+      - JINA_API_KEY=${JINA_API_KEY}
+      - JINA_EMBED_MODEL=${JINA_EMBED_MODEL:-jina-embeddings-v3}
+      - JINA_EMBED_DIMENSIONS=${JINA_EMBED_DIMENSIONS:-1024}
+      # Langfuse
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-https://cloud.langfuse.com}
+      # Pipeline
+      - CONFIDENCE_VERIFIED_THRESHOLD=${CONFIDENCE_VERIFIED_THRESHOLD:-0.8}
+      - CONFIDENCE_PARTIAL_THRESHOLD=${CONFIDENCE_PARTIAL_THRESHOLD:-0.5}
+      - MAX_RETRIES=${MAX_RETRIES:-2}
+      - MAX_RETRIEVAL_DOCS=${MAX_RETRIEVAL_DOCS:-5}
+      - CHUNK_SIZE=${CHUNK_SIZE:-512}
+      - CHUNK_OVERLAP=${CHUNK_OVERLAP:-64}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src
+      - ./uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  opensearch_data:
+  redis_data:
