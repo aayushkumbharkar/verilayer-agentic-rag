@@ -19,8 +19,12 @@ from src.core.config import settings
 from src.core.logging import setup_logging
 from src.observability.langfuse_client import flush_langfuse, get_langfuse_client
 
-# Import routers (more added each phase)
+# Import routers — all phases
 from src.api.routes import health
+from src.api.routes import ingest
+from src.api.routes import search
+from src.api.routes import verify
+from src.api.routes import metrics
 
 _logger = structlog.get_logger("verilayer.startup")
 
@@ -85,7 +89,10 @@ app.add_middleware(
 
 # ── Routes ───────────────────────────────────────────────────────────────────
 app.include_router(health.router)
-# Phase 2+: ingest, search, verify, metrics routers added here
+app.include_router(ingest.router)         # Phase 2: POST /ingest, POST /ingest/pdf
+app.include_router(search.router)         # Phase 3+4: POST /search/bm25, POST /search/hybrid
+app.include_router(verify.router)         # Phase 5+6: POST /rag/query, POST /verify
+app.include_router(metrics.router)        # Phase 7: GET /metrics
 
 
 @app.get("/", tags=["Root"])
