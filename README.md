@@ -163,10 +163,10 @@ pytest tests/ -v
 ## Build Phases
 
 - [x] Phase 1: Infrastructure + Docker + Langfuse tracing
-- [ ] Phase 2: Ingestion pipeline
-- [ ] Phase 3: BM25 search
-- [ ] Phase 4: Hybrid search
-- [ ] Phase 5: Basic RAG
-- [ ] Phase 6: Agentic system (LangGraph)
-- [ ] Phase 7: Observability + evaluation
-- [ ] Phase 8: Gradio UI
+- [x] Phase 2: Ingestion pipeline
+- [x] Phase 3: BM25 search
+- [x] Phase 4: Hybrid search
+- [x] Phase 5: Basic RAG
+- [x] Phase 6: Agentic system (LangGraph)
+- [x] Phase 7: Observability + evaluation
+- [x] Phase 8: Gradio UI

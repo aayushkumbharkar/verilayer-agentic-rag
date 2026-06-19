@@ -1,7 +1,7 @@
 """
 VeriLayer — Phase 8: Gradio UI.
 
-A rich Gradio Blocks interface with:
+A rich Gradio Blocks interface that imports modular components:
   - Query Input panel with top_k slider
   - Answer Panel: final answer + confidence badge + status chip
   - Claims Table: claim text, verdict (🟢/🔴/🟡), confidence bar
@@ -12,33 +12,15 @@ A rich Gradio Blocks interface with:
 from __future__ import annotations
 
 import asyncio
-import json
-import httpx
 import gradio as gr
 
-BASE_URL = "http://localhost:8000"
-TIMEOUT = 120.0
-
-
-# ── Status helpers ─────────────────────────────────────────────────────────────
-
-STATUS_EMOJI = {
-    "verified": "🟢 Verified",
-    "partial":  "🟡 Partial",
-    "unsafe":   "🔴 Unsafe",
-}
-
-VERDICT_EMOJI = {
-    "supported":   "🟢",
-    "partial":     "🟡",
-    "unsupported": "🔴",
-}
-
-STATUS_CSS = {
-    "verified": "color: #22c55e; font-weight: bold;",
-    "partial":  "color: #eab308; font-weight: bold;",
-    "unsafe":   "color: #ef4444; font-weight: bold;",
-}
+from ui.utils.api_client import call_verify, call_metrics
+from ui.components.query_panel import render_query_panel
+from ui.components.answer_panel import render_answer_panel, format_answer
+from ui.components.claims_table import render_claims_table, format_claims
+from ui.components.sources_panel import render_sources_panel, format_sources
+from ui.components.trace_panel import render_trace_panel, format_trace
+from ui.components.metrics_panel import render_metrics_panel, format_metrics
 
 
 # ── Synchronous API call (Gradio runs sync functions) ─────────────────────────
@@ -57,153 +39,47 @@ def _run_async(coro):
         return asyncio.run(coro)
 
 
-async def _post_verify(query: str, top_k: int) -> dict:
-    async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-        resp = await client.post(
-            f"{BASE_URL}/verify",
-            json={"query": query, "top_k": int(top_k)},
-        )
-        resp.raise_for_status()
-        return resp.json()
-
-
-async def _get_metrics() -> dict:
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await client.get(f"{BASE_URL}/metrics")
-        resp.raise_for_status()
-        return resp.json()
-
-
-# ── Result formatters ──────────────────────────────────────────────────────────
-
-def _format_answer(data: dict) -> str:
-    status = data.get("status", "unsafe")
-    confidence = data.get("confidence", 0.0)
-    answer = data.get("final_answer", "No answer generated.")
-    badge = STATUS_EMOJI.get(status, status)
-    conf_pct = f"{confidence * 100:.1f}%"
-    return (
-        f"### {badge} &nbsp;&nbsp; Confidence: **{conf_pct}**\n\n"
-        f"---\n\n"
-        f"{answer}"
-    )
-
-
-def _format_claims(data: dict) -> str:
-    claims = data.get("claims", [])
-    if not claims:
-        return "_No claims extracted._"
-
-    lines = ["| # | Claim | Verdict | Confidence |",
-             "|---|-------|---------|------------|"]
-    for i, c in enumerate(claims, 1):
-        verdict = c.get("verdict", "unsupported")
-        conf = float(c.get("confidence", 0.0))
-        emoji = VERDICT_EMOJI.get(verdict, "❓")
-        bar_filled = int(conf * 10)
-        bar = "█" * bar_filled + "░" * (10 - bar_filled)
-        text = c.get("text", "")[:120].replace("|", "\\|")
-        lines.append(
-            f"| {i} | {text} | {emoji} {verdict} | `{bar}` {conf:.0%} |"
-        )
-    return "\n".join(lines)
-
-
-def _format_sources(data: dict) -> str:
-    claims = data.get("claims", [])
-    seen: dict[str, dict] = {}
-    for c in claims:
-        for s in c.get("sources", []):
-            cid = s.get("chunk_id", "")
-            if cid and cid not in seen:
-                seen[cid] = s
-
-    if not seen:
-        return "_No source chunks cited._"
-
-    parts = []
-    for i, (_, s) in enumerate(seen.items(), 1):
-        doc_id = s.get("document_id", "?")[:20]
-        chunk_text = s.get("text", "")[:300].replace("\n", " ")
-        score = s.get("score", 0.0)
-        parts.append(
-            f"**Source {i}** — `{doc_id}` (score: {score:.4f})\n\n"
-            f"> {chunk_text}…\n"
-        )
-    return "\n---\n".join(parts)
-
-
-def _format_trace(data: dict) -> list[tuple[str, str]]:
-    """Return list of (label, content) for gr.Accordion steps."""
-    trace = data.get("trace", [])
-    result = []
-    for t in trace:
-        step = t.get("step", "?")
-        details = t.get("details", "")
-        latency = t.get("latency_ms", 0)
-        label = f"🔹 {step.upper()} — {latency}ms"
-        result.append((label, details))
-    return result
-
-
-def _format_metrics(data: dict) -> str:
-    if not data or data.get("total_queries", 0) == 0:
-        return "_No data yet — run a query first._"
-
-    total = data.get("total_queries", 0)
-    hall = data.get("hallucination_rate", 0.0)
-    conf = data.get("avg_confidence", 0.0)
-    retry = data.get("retry_rate", 0.0)
-    latency = data.get("avg_latency_ms", 0.0)
-    verified = data.get("verified_rate", 0.0)
-    partial = data.get("partial_rate", 0.0)
-    unsafe = data.get("unsafe_rate", 0.0)
-
-    return (
-        f"| Metric | Value |\n"
-        f"|--------|-------|\n"
-        f"| Total Queries | **{total}** |\n"
-        f"| 🟢 Verified Rate | **{verified:.1%}** |\n"
-        f"| 🟡 Partial Rate | **{partial:.1%}** |\n"
-        f"| 🔴 Unsafe Rate | **{unsafe:.1%}** |\n"
-        f"| Hallucination Rate | **{hall:.1%}** |\n"
-        f"| Avg Confidence | **{conf:.1%}** |\n"
-        f"| Retry Rate | **{retry:.1%}** |\n"
-        f"| Avg Latency | **{latency:.0f}ms** |\n"
-    )
-
-
-# ── Main handler ───────────────────────────────────────────────────────────────
+# ── Main UI handlers ───────────────────────────────────────────────────────────
 
 def on_submit(query: str, top_k: int):
     """Called when the user clicks Submit."""
     if not query.strip():
-        empty = {"status": "unsafe", "confidence": 0.0, "final_answer": "Please enter a query.", "claims": [], "trace": [], "metadata": {}}
+        empty = {
+            "status": "unsafe",
+            "confidence": 0.0,
+            "final_answer": "Please enter a query.",
+            "claims": [],
+            "trace": [],
+            "metadata": {},
+        }
         return (
-            _format_answer(empty),
-            _format_claims(empty),
-            _format_sources(empty),
-            gr.update(value=""),  # trace placeholder
+            format_answer(empty),
+            format_claims(empty),
+            format_sources(empty),
+            "",
             "_",
         )
 
     try:
-        data = _run_async(_post_verify(query, top_k))
+        data = _run_async(call_verify(query, top_k))
     except Exception as exc:
-        err = {"status": "unsafe", "confidence": 0.0, "final_answer": f"❌ Error: {exc}", "claims": [], "trace": [], "metadata": {}}
+        err = {
+            "status": "unsafe",
+            "confidence": 0.0,
+            "final_answer": f"❌ Error: {exc}",
+            "claims": [],
+            "trace": [],
+            "metadata": {},
+        }
         return (
-            _format_answer(err),
-            _format_claims(err),
-            _format_sources(err),
+            format_answer(err),
+            format_claims(err),
+            format_sources(err),
             f"Error: {exc}",
             "_",
         )
 
-    trace_steps = _format_trace(data)
-    trace_md = "\n\n".join(
-        f"**{label}**\n{content}" for label, content in trace_steps
-    ) if trace_steps else "_No trace available._"
-
+    trace_md = format_trace(data)
     meta = data.get("metadata", {})
     meta_str = (
         f"📄 Retrieved: **{meta.get('retrieval_docs', 0)}** docs | "
@@ -212,9 +88,9 @@ def on_submit(query: str, top_k: int):
     )
 
     return (
-        _format_answer(data),
-        _format_claims(data),
-        _format_sources(data),
+        format_answer(data),
+        format_claims(data),
+        format_sources(data),
         trace_md,
         meta_str,
     )
@@ -222,8 +98,8 @@ def on_submit(query: str, top_k: int):
 
 def on_metrics_refresh():
     try:
-        data = _run_async(_get_metrics())
-        return _format_metrics(data)
+        data = _run_async(call_metrics())
+        return format_metrics(data)
     except Exception as exc:
         return f"❌ Could not fetch metrics: {exc}"
 
@@ -259,44 +135,29 @@ with gr.Blocks(
     """)
 
     with gr.Row():
-        # ── Left column: input ────────────────────────────────────────────────
+        # ── Left column: query inputs ─────────────────────────────────────────
         with gr.Column(scale=1):
-            query_input = gr.Textbox(
-                label="Your Question",
-                placeholder="e.g. What are the payment obligations under clause 5.2?",
-                lines=4,
-                elem_id="query-box",
-            )
-            top_k_slider = gr.Slider(
-                minimum=1, maximum=15, step=1, value=5,
-                label="Documents to retrieve (top_k)",
-            )
-            submit_btn = gr.Button("🔍 Verify", variant="primary", size="lg")
-            meta_output = gr.Markdown(value="", label="Pipeline Metadata")
+            query_input, top_k_slider, submit_btn, meta_output = render_query_panel()
 
-        # ── Right column: answer ──────────────────────────────────────────────
+        # ── Right column: answer display ──────────────────────────────────────
         with gr.Column(scale=2):
-            answer_output = gr.Markdown(
-                value="*Submit a query to see the verified answer.*",
-                label="Answer",
-            )
+            answer_output = render_answer_panel()
 
     gr.Markdown("---")
 
-    # ── Claims, Sources, Trace ─────────────────────────────────────────────────
+    # ── Detailed tabs (Claims, Sources, Trace, Metrics) ───────────────────────
     with gr.Tabs():
         with gr.TabItem("📋 Claims"):
-            claims_output = gr.Markdown(value="_Claims will appear here._")
+            claims_output = render_claims_table()
 
         with gr.TabItem("📚 Sources"):
-            sources_output = gr.Markdown(value="_Sources will appear here._")
+            sources_output = render_sources_panel()
 
         with gr.TabItem("🔎 Pipeline Trace"):
-            trace_output = gr.Markdown(value="_Trace will appear here after a query._")
+            trace_output = render_trace_panel()
 
         with gr.TabItem("📊 Metrics"):
-            metrics_output = gr.Markdown(value=_format_metrics({}))
-            refresh_btn = gr.Button("🔄 Refresh Metrics", variant="secondary")
+            metrics_output, refresh_btn = render_metrics_panel()
 
     # ── Event handlers ─────────────────────────────────────────────────────────
     submit_btn.click(
