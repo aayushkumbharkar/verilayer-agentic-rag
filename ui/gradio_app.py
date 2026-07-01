@@ -24,30 +24,9 @@ from ui.components.metrics_panel import render_metrics_panel, format_metrics
 from ui.components.ingest_panel import render_ingest_panel
 
 
-# ── Synchronous API call (Gradio runs sync functions) ─────────────────────────
-
-def _run_async(coro):
-    """Run an async coroutine from a sync Gradio handler.
-
-    Gradio executes sync event handlers in a ThreadPoolExecutor worker thread
-    that has NO running event loop, so asyncio.run() is always safe here.
-    Using get_event_loop() was fragile because it returned the main thread's
-    loop (which IS running), causing intermittent failures requiring retries.
-    """
-    try:
-        asyncio.get_running_loop()
-        # We are somehow inside a running loop — run in a fresh thread.
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            return pool.submit(asyncio.run, coro).result()
-    except RuntimeError:
-        # No running loop in this thread (normal Gradio worker) — safe path.
-        return asyncio.run(coro)
-
-
 # ── Main UI handlers ───────────────────────────────────────────────────────────
 
-def on_submit(query: str, top_k: int):
+async def on_submit(query: str, top_k: int):
     """Called when the user clicks Submit."""
     if not query.strip():
         empty = {
@@ -67,7 +46,7 @@ def on_submit(query: str, top_k: int):
         )
 
     try:
-        data = _run_async(call_verify(query, top_k))
+        data = await call_verify(query, top_k)
     except Exception as exc:
         err = {
             "status": "unsafe",
@@ -102,24 +81,24 @@ def on_submit(query: str, top_k: int):
     )
 
 
-def on_metrics_refresh():
+async def on_metrics_refresh():
     try:
-        data = _run_async(call_metrics())
+        data = await call_metrics()
         return format_metrics(data)
     except Exception as exc:
         return f"❌ Could not fetch metrics: {exc}"
 
 
-def on_ingest_pdf(pdf_file, section: str, clause: str) -> str:
+async def on_ingest_pdf(pdf_file, section: str, clause: str) -> str:
     """Called when the user clicks Ingest PDF."""
     if pdf_file is None:
         return "⚠️ Please select a PDF file first."
     try:
-        data = _run_async(call_ingest_pdf(
+        data = await call_ingest_pdf(
             pdf_path=pdf_file.name if hasattr(pdf_file, 'name') else str(pdf_file),
             section=section.strip() or None,
             clause=clause.strip() or None,
-        ))
+        )
         chunks = data.get("chunks_created", data.get("chunk_count", "?"))
         doc_id = data.get("document_id", "")
         return (
@@ -132,19 +111,19 @@ def on_ingest_pdf(pdf_file, section: str, clause: str) -> str:
         return f"❌ Ingestion failed: {exc}"
 
 
-def on_ingest_text(source_name: str, content: str, section: str, clause: str) -> str:
+async def on_ingest_text(source_name: str, content: str, section: str, clause: str) -> str:
     """Called when the user clicks Ingest Text."""
     if not source_name.strip():
         return "⚠️ Please enter a document name."
     if not content.strip():
         return "⚠️ Please paste some content to ingest."
     try:
-        data = _run_async(call_ingest_text(
+        data = await call_ingest_text(
             source_name=source_name.strip(),
             content=content.strip(),
             section=section.strip() or None,
             clause=clause.strip() or None,
-        ))
+        )
         chunks = data.get("chunks_created", data.get("chunk_count", "?"))
         doc_id = data.get("document_id", "")
         return (
