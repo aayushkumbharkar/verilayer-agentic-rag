@@ -27,16 +27,21 @@ from ui.components.ingest_panel import render_ingest_panel
 # ── Synchronous API call (Gradio runs sync functions) ─────────────────────────
 
 def _run_async(coro):
-    """Run an async coroutine synchronously."""
+    """Run an async coroutine from a sync Gradio handler.
+
+    Gradio executes sync event handlers in a ThreadPoolExecutor worker thread
+    that has NO running event loop, so asyncio.run() is always safe here.
+    Using get_event_loop() was fragile because it returned the main thread's
+    loop (which IS running), causing intermittent failures requiring retries.
+    """
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                future = pool.submit(asyncio.run, coro)
-                return future.result()
-        return loop.run_until_complete(coro)
+        asyncio.get_running_loop()
+        # We are somehow inside a running loop — run in a fresh thread.
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(asyncio.run, coro).result()
     except RuntimeError:
+        # No running loop in this thread (normal Gradio worker) — safe path.
         return asyncio.run(coro)
 
 
