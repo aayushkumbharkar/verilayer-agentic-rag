@@ -2,6 +2,9 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Ensure Python output is not buffered (so docker logs shows Gradio URL)
+ENV PYTHONUNBUFFERED=1
+
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
@@ -22,5 +25,5 @@ EXPOSE 7860
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:7860/ || exit 1
 
-# Run Gradio app
-CMD ["python", "-m", "ui.gradio_app"]
+# Run Gradio app with unbuffered output
+CMD ["python", "-u", "-m", "ui.gradio_app"]
