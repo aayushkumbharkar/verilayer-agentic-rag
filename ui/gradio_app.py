@@ -163,7 +163,6 @@ CSS = """
 
 with gr.Blocks(
     title="VeriLayer — Trust Layer for LLMs",
-    css=CSS,
 ) as demo:
 
     # Header
@@ -215,54 +214,64 @@ with gr.Blocks(
         with gr.TabItem("🎥 Screen Recording"):
             gr.HTML("""
             <div id='recording-info'>
-                🎬 <strong>How to record:</strong>
-                Click <em>Record</em> below → choose your screen/window/tab → interact with VeriLayer → click <em>Stop</em>.<br>
-                The recording will appear below for <strong>instant playback</strong> and download.
+              <h3 style='color:#6366f1;margin-top:0'>🎬 How to record your screen</h3>
+              <p>Gradio 6 uses your <strong>browser's built-in screen recorder</strong>. Follow these steps:</p>
+              <ol style='line-height:2'>
+                <li>Press <kbd style='background:#334155;padding:2px 8px;border-radius:4px;color:#fff'>Windows + G</kbd> to open <strong>Xbox Game Bar</strong> (Windows built-in recorder)</li>
+                <li><strong>Or</strong> use <a href='https://chrome.google.com/webstore/detail/screen-recorder' target='_blank' style='color:#6366f1'>Chrome Screen Recorder extension</a></li>
+                <li><strong>Or</strong> press <kbd style='background:#334155;padding:2px 8px;border-radius:4px;color:#fff'>Win + Alt + R</kbd> to start/stop recording immediately</li>
+                <li>Once done, <strong>upload your recording</strong> below to view &amp; save it in VeriLayer</li>
+              </ol>
+              <p style='color:#f59e0b'>⚠️ Gradio 6.x removed <code>sources=["screen"]</code> — use the browser/OS tools above to capture screen, then upload here.</p>
             </div>
             """)
             with gr.Row():
                 with gr.Column(scale=3):
-                    screen_recorder = gr.Video(
-                        sources=["screen"],
-                        label="🔴 Screen Recorder — click Record to start",
+                    uploaded_recording = gr.Video(
+                        sources=["upload", "webcam"],
+                        label="📹 Upload or Webcam Recording — drag &amp; drop your screen recording here",
                         include_audio=True,
                         height=420,
                         elem_id="screen-recorder",
                     )
                 with gr.Column(scale=2):
                     recording_status = gr.Markdown(
-                        value="⏹ **No recording yet.**\n\nClick **Record** on the video panel to start capturing your screen.",
-                        label="Status",
-                    )
-                    gr.Markdown(
-                        "> 💡 **Tip:** After stopping, the video appears in the player. "
-                        "Right-click it → **Save video as…** to download, "
-                        "or use the download button (⬇) on the video player."
+                        value=(
+                            "**📹 Quick recording options:**\n\n"
+                            "**Windows (built-in):**\n"
+                            "- `Win + G` → Xbox Game Bar → ● Record\n"
+                            "- `Win + Alt + R` → instant record/stop\n"
+                            "- Saves to: `Videos\\Captures\\`\n\n"
+                            "**Browser extension:**\n"
+                            "- [Loom](https://www.loom.com) — free, instant share\n"
+                            "- [Screenity](https://chrome.google.com/webstore/detail/screenity) — Chrome\n\n"
+                            "**After recording:** drag the `.mp4`/`.webm` file into the video player ⬅"
+                        ),
+                        label="Recording Options",
                     )
 
-            # When recording stops, update status and save to uploads/
-            def on_recording_complete(video_path):
+            # When a video is uploaded/recorded, save it server-side
+            def on_recording_upload(video_path):
                 import os, shutil, datetime
                 if video_path is None:
-                    return "⚠️ Recording was empty or cancelled."
+                    return "⚠️ No video provided."
                 save_dir = "/app/uploads/recordings"
                 os.makedirs(save_dir, exist_ok=True)
                 ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                ext = os.path.splitext(video_path)[-1] or ".webm"
+                ext = os.path.splitext(video_path)[-1] or ".mp4"
                 dest = os.path.join(save_dir, f"recording_{ts}{ext}")
                 shutil.copy2(video_path, dest)
                 size_mb = os.path.getsize(dest) / (1024 * 1024)
                 return (
-                    f"✅ **Recording saved!**\n\n"
-                    f"- 📁 Saved to: `uploads/recordings/recording_{ts}{ext}`\n"
+                    f"✅ **Recording saved server-side!**\n\n"
+                    f"- 📁 Path: `uploads/recordings/recording_{ts}{ext}`\n"
                     f"- 💾 Size: **{size_mb:.2f} MB**\n"
-                    f"- 🕒 Timestamp: `{ts}`\n\n"
-                    f"Use the download button (⬇) on the video player to save locally."
+                    f"- 🕒 Saved at: `{ts}`"
                 )
 
-            screen_recorder.stop_recording(
-                fn=on_recording_complete,
-                inputs=[screen_recorder],
+            uploaded_recording.change(
+                fn=on_recording_upload,
+                inputs=[uploaded_recording],
                 outputs=[recording_status],
             )
 
@@ -304,4 +313,5 @@ if __name__ == "__main__":
             secondary_hue="slate",
             neutral_hue="slate",
         ),
+        css=CSS,
     )
