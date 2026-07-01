@@ -158,6 +158,7 @@ CSS = """
 #verilayer-header { text-align: center; padding: 1.5rem 0 0.5rem; }
 #query-box textarea { font-size: 1rem; }
 .status-chip { border-radius: 999px; padding: 4px 14px; font-weight: 700; }
+#recording-info { background: #1e293b; border-radius: 10px; padding: 12px 18px; color: #94a3b8; font-size: 0.9rem; margin-bottom: 8px; }
 """
 
 with gr.Blocks(
@@ -209,6 +210,61 @@ with gr.Blocks(
 
         with gr.TabItem("📊 Metrics"):
             metrics_output, refresh_btn = render_metrics_panel()
+
+        # ── Screen Recording Tab ──────────────────────────────────────────────
+        with gr.TabItem("🎥 Screen Recording"):
+            gr.HTML("""
+            <div id='recording-info'>
+                🎬 <strong>How to record:</strong>
+                Click <em>Record</em> below → choose your screen/window/tab → interact with VeriLayer → click <em>Stop</em>.<br>
+                The recording will appear below for <strong>instant playback</strong> and download.
+            </div>
+            """)
+            with gr.Row():
+                with gr.Column(scale=3):
+                    screen_recorder = gr.Video(
+                        sources=["screen"],
+                        label="🔴 Screen Recorder — click Record to start",
+                        include_audio=True,
+                        height=420,
+                        elem_id="screen-recorder",
+                    )
+                with gr.Column(scale=2):
+                    recording_status = gr.Markdown(
+                        value="⏹ **No recording yet.**\n\nClick **Record** on the video panel to start capturing your screen.",
+                        label="Status",
+                    )
+                    gr.Markdown(
+                        "> 💡 **Tip:** After stopping, the video appears in the player. "
+                        "Right-click it → **Save video as…** to download, "
+                        "or use the download button (⬇) on the video player."
+                    )
+
+            # When recording stops, update status and save to uploads/
+            def on_recording_complete(video_path):
+                import os, shutil, datetime
+                if video_path is None:
+                    return "⚠️ Recording was empty or cancelled."
+                save_dir = "/app/uploads/recordings"
+                os.makedirs(save_dir, exist_ok=True)
+                ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                ext = os.path.splitext(video_path)[-1] or ".webm"
+                dest = os.path.join(save_dir, f"recording_{ts}{ext}")
+                shutil.copy2(video_path, dest)
+                size_mb = os.path.getsize(dest) / (1024 * 1024)
+                return (
+                    f"✅ **Recording saved!**\n\n"
+                    f"- 📁 Saved to: `uploads/recordings/recording_{ts}{ext}`\n"
+                    f"- 💾 Size: **{size_mb:.2f} MB**\n"
+                    f"- 🕒 Timestamp: `{ts}`\n\n"
+                    f"Use the download button (⬇) on the video player to save locally."
+                )
+
+            screen_recorder.stop_recording(
+                fn=on_recording_complete,
+                inputs=[screen_recorder],
+                outputs=[recording_status],
+            )
 
     # ── Event handlers ───────────────────────────────────────────────────────────────────
     # Query handlers
