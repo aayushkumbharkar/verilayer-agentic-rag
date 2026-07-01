@@ -174,7 +174,33 @@ async def run_pipeline(
         start_time_ms=int(time.time() * 1000),
     )
     logger.info("pipeline_starting", query=query[:80], top_k=top_k)
-    final_state: GraphState = await graph.ainvoke(initial_state)
+
+    raw_result = await graph.ainvoke(initial_state)
+
+    # LangGraph returns an AddableValuesDict, not a GraphState instance.
+    # Coerce it back to a proper GraphState for type-safe access downstream.
+    if isinstance(raw_result, GraphState):
+        final_state = raw_result
+    else:
+        # raw_result is dict-like (AddableValuesDict)
+        try:
+            final_state = GraphState(**dict(raw_result))
+        except Exception as coerce_exc:
+            logger.error(
+                "graph_state_coercion_failed",
+                error=str(coerce_exc),
+                raw_keys=list(raw_result.keys()) if hasattr(raw_result, "keys") else "?",
+            )
+            # Return a minimal unsafe state so callers don't crash
+            final_state = GraphState(
+                query=query,
+                top_k=top_k,
+                session_id=session_id,
+                status="unsafe",
+                answer="Pipeline failed to complete. Please try again.",
+                avg_confidence=0.0,
+            )
+
     logger.info(
         "pipeline_complete",
         status=final_state.status,

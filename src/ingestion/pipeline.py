@@ -5,6 +5,7 @@ Handles PDF + plain text ingestion end-to-end.
 from __future__ import annotations
 
 import io
+import math
 import structlog
 from pypdf import PdfReader
 
@@ -13,8 +14,34 @@ from src.ingestion.metadata_extractor import extract_metadata
 from src.ingestion.opensearch_writer import ensure_index_exists, index_chunks
 from src.ingestion.postgres_writer import ensure_tables_exist, save_document_metadata
 from src.models.schemas import IngestResponse
+from src.core.config import settings
 
 logger = structlog.get_logger("verilayer.ingestion.pipeline")
+
+EMBED_BATCH_SIZE = 64  # Jina API max batch size
+
+
+async def _embed_chunks(chunks) -> None:
+    """
+    Generate and attach Jina embeddings to each chunk in-place.
+    Silently skips if JINA_API_KEY is not configured.
+    """
+    if not settings.jina_api_key:
+        logger.warning("jina_key_missing_skipping_embeddings")
+        return
+    try:
+        from src.retrieval.embeddings import embed_texts
+        texts = [c.text for c in chunks]
+        # Process in batches to stay within API limits
+        for i in range(0, len(texts), EMBED_BATCH_SIZE):
+            batch_texts = texts[i : i + EMBED_BATCH_SIZE]
+            batch_chunks = chunks[i : i + EMBED_BATCH_SIZE]
+            vectors = await embed_texts(batch_texts)
+            for chunk, vec in zip(batch_chunks, vectors):
+                chunk.embedding = vec
+        logger.info("embeddings_attached", count=len(chunks))
+    except Exception as exc:
+        logger.warning("embedding_failed_continuing_without", error=str(exc))
 
 
 async def ingest_text(
@@ -50,7 +77,10 @@ async def ingest_text(
             message="No content to index after chunking.",
         )
 
-    # Index into OpenSearch (no embeddings yet — added in Phase 4)
+    # Generate embeddings (attaches vectors in-place; no-op if key missing)
+    await _embed_chunks(chunks)
+
+    # Index into OpenSearch
     indexed = await index_chunks(chunks)
 
     # Save metadata to PostgreSQL

@@ -129,6 +129,21 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  # ─── Gradio UI ──────────────────────────────────────────────────────────────
+  ui:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.gradio
+    container_name: verilayer-ui
+    ports:
+      - "7860:7860"
+    environment:
+      - VERILAYER_API_URL=http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   opensearch_data:

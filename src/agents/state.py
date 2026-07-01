@@ -4,7 +4,7 @@ The single shared state object that flows through all agent nodes.
 """
 from __future__ import annotations
 from typing import Annotated, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 import operator
 
 
@@ -46,5 +46,4 @@ class GraphState(BaseModel):
     start_time_ms: int = Field(default=0)
     total_latency_ms: int = Field(default=0)
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)

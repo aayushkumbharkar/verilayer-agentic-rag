@@ -4,9 +4,10 @@ Used by the Gradio UI to communicate with the FastAPI backend.
 """
 from __future__ import annotations
 
+import os
 import httpx
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = os.environ.get("VERILAYER_API_URL", "http://localhost:8000").rstrip("/")
 TIMEOUT = 120.0  # LLM calls can take time
 
 
@@ -44,5 +45,45 @@ async def call_metrics() -> dict:
     """GET /metrics — returns evaluation metrics."""
     async with httpx.AsyncClient(timeout=10.0) as client:
         resp = await client.get(f"{BASE_URL}/metrics")
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def call_ingest_text(
+    source_name: str,
+    content: str,
+    section: str | None = None,
+    clause: str | None = None,
+) -> dict:
+    """POST /ingest — ingest plain text content."""
+    payload = {"source_name": source_name, "content": content}
+    if section:
+        payload["section"] = section
+    if clause:
+        payload["clause"] = clause
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        resp = await client.post(f"{BASE_URL}/ingest", json=payload)
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def call_ingest_pdf(
+    pdf_path: str,
+    section: str | None = None,
+    clause: str | None = None,
+) -> dict:
+    """POST /ingest/pdf — upload a PDF file for ingestion."""
+    import os
+    filename = os.path.basename(pdf_path)
+    with open(pdf_path, "rb") as f:
+        pdf_bytes = f.read()
+    files = {"file": (filename, pdf_bytes, "application/pdf")}
+    data = {}
+    if section:
+        data["section"] = section
+    if clause:
+        data["clause"] = clause
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        resp = await client.post(f"{BASE_URL}/ingest/pdf", files=files, data=data)
         resp.raise_for_status()
         return resp.json()

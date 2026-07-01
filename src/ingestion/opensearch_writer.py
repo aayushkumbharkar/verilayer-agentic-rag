@@ -82,23 +82,25 @@ async def index_chunks(chunks: list[Chunk]) -> int:
 
     client = _get_client()
     try:
-        actions = [
-            {
-                "_index": settings.opensearch_index,
-                "_id": chunk.chunk_id,
-                "_source": {
-                    "chunk_id": chunk.chunk_id,
-                    "document_id": chunk.document_id,
-                    "text": chunk.text,
-                    "source": chunk.metadata.source,
-                    "section": chunk.metadata.section,
-                    "clause": chunk.metadata.clause,
-                    "token_count": chunk.token_count,
-                    "embedding": chunk.embedding or [],
-                },
+        actions = []
+        for chunk in chunks:
+            source = {
+                "chunk_id":    chunk.chunk_id,
+                "document_id": chunk.document_id,
+                "text":        chunk.text,
+                "source":      chunk.metadata.source,
+                "section":     chunk.metadata.section,
+                "clause":      chunk.metadata.clause,
+                "token_count": chunk.token_count,
             }
-            for chunk in chunks
-        ]
+            # Only include embedding when a real vector is available
+            if chunk.embedding:
+                source["embedding"] = chunk.embedding
+            actions.append({
+                "_index": settings.opensearch_index,
+                "_id":    chunk.chunk_id,
+                "_source": source,
+            })
 
         success, errors = await async_bulk(client, actions, raise_on_error=False)
         if errors:
