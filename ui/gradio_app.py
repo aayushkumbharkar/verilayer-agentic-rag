@@ -48,10 +48,13 @@ async def on_submit(query: str, top_k: int):
     try:
         data = await call_verify(query, top_k)
     except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        err_msg = f"{type(exc).__name__}: {exc}"
         err = {
             "status": "unsafe",
             "confidence": 0.0,
-            "final_answer": f"❌ Error: {exc}",
+            "final_answer": f"❌ Error: {err_msg}",
             "claims": [],
             "trace": [],
             "metadata": {},
@@ -60,7 +63,7 @@ async def on_submit(query: str, top_k: int):
             format_answer(err),
             format_claims(err),
             format_sources(err),
-            f"Error: {exc}",
+            f"Error: {err_msg}",
             "_",
         )
 
