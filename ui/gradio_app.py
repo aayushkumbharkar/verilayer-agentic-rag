@@ -162,6 +162,7 @@ CSS = """
 
 with gr.Blocks(
     title="VeriLayer — Trust Layer for LLMs",
+    css=CSS,
 ) as demo:
 
     # Header
@@ -241,10 +242,10 @@ if __name__ == "__main__":
         server_name="0.0.0.0",
         server_port=7860,
         share=False,
+        pwa=True,
         theme=gr.themes.Soft(
             primary_hue="indigo",
             secondary_hue="slate",
             neutral_hue="slate",
         ),
-        css=CSS,
     )
