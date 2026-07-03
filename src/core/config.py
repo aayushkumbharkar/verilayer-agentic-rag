@@ -55,7 +55,7 @@ class Settings(BaseSettings):
 
     # ── Groq LLM ──────────────────────────────────────────────────────────────
     groq_api_key: str = Field(default="")
-    groq_model: str = Field(default="llama-3.3-70b-versatile")
+    groq_model: str = Field(default="openai/gpt-oss-20b")
     groq_timeout: int = Field(default=30)
     groq_max_retries: int = Field(default=3)
 

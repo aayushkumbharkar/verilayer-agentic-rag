@@ -93,7 +93,7 @@ services:
       - REDIS_TTL=${REDIS_TTL:-3600}
       # Groq
       - GROQ_API_KEY=${GROQ_API_KEY}
-      - GROQ_MODEL=${GROQ_MODEL:-llama-3.3-70b-versatile}
+      - GROQ_MODEL=${GROQ_MODEL:-openai/gpt-oss-20b}
       - GROQ_TIMEOUT=${GROQ_TIMEOUT:-30}
       - GROQ_MAX_RETRIES=${GROQ_MAX_RETRIES:-3}
       # Jina
